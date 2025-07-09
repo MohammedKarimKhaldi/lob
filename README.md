@@ -74,6 +74,21 @@ The web interface provides:
 - Interactive simulation controls
 - Trade history and analytics
 
+#### Main Interface
+![Main UI](docs/images/main-ui.png)
+
+*The main simulation interface showing the order book, price chart, and control panel.*
+
+#### Simulation in Action
+![Simulation Running](docs/images/simulation-running.png)
+
+*Real-time simulation with live price updates, order book changes, and trade execution.*
+
+#### Strategy Performance
+![Strategy Performance](docs/images/strategy-performance.png)
+
+*Strategy performance dashboard showing PnL, positions, and risk metrics for each trading strategy.*
+
 ### Programmatic Usage
 
 ```python
@@ -119,6 +134,14 @@ python examples/strategy_comparison.py
 - Real-time trade updates
 - Strategy performance dashboard
 - Market maker inventory tracking
+
+#### Web Interface Highlights
+- **Responsive Design**: Modern, clean interface that works on desktop and mobile
+- **Real-time Updates**: Live data streaming via WebSocket connections
+- **Interactive Charts**: D3.js powered visualizations with zoom and pan capabilities
+- **Strategy Dashboard**: Real-time PnL tracking and performance metrics
+- **Order Book Visualization**: Dynamic depth chart showing bid/ask levels
+- **Trade History**: Complete record of all executed trades with timestamps
 
 ### Trading Strategy Framework
 - **Market Making**: Bid-ask spread optimization with inventory management
