@@ -1,0 +1,48 @@
+<!-- Control Panel Component -->
+<div class="control-panel">
+    <h2>Simulation Controls</h2>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label for="connectionStatus">Connection Status:</label>
+            <div id="connectionStatus">Disconnected</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="simulationStatus">Simulation Status:</label>
+            <div id="simulationStatus">Stopped</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="simulationTime">Simulation Time:</label>
+            <div id="simulationTime">0.0s</div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label>Market Making Strategy:</label>
+            <input type="checkbox" class="strategy-select" value="market_making" checked>
+        </div>
+        
+        <div class="control-group">
+            <label>Momentum Strategy:</label>
+            <input type="checkbox" class="strategy-select" value="momentum">
+        </div>
+        
+        <div class="control-group">
+            <label>Mean Reversion Strategy:</label>
+            <input type="checkbox" class="strategy-select" value="mean_reversion">
+        </div>
+        
+        <div class="control-group">
+            <label>Arbitrage Strategy:</label>
+            <input type="checkbox" class="strategy-select" value="arbitrage">
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="startSimulation" class="btn btn-success">Start Simulation</button>
+        <button id="stopSimulation" class="btn btn-danger" disabled>Stop Simulation</button>
+    </div>
+</div> 
