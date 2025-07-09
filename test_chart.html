@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Chart Test</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .price-chart {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>Price Chart Test</h1>
+    <div id="priceChart" class="price-chart"></div>
+    
+    <button onclick="updateChart()">Update Chart</button>
+    
+    <script>
+        let priceChart;
+        let testData = [];
+        
+        // Initialize chart
+        function initializeChart() {
+            const container = document.getElementById('priceChart');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const margin = { top: 20, right: 20, bottom: 30, left: 60 };
+            
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            
+            priceChart = d3.select('#priceChart')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+        }
+        
+        function updatePriceChart(priceHistory) {
+            if (!priceHistory || priceHistory.length === 0) {
+                console.log('No price history data available');
+                return;
+            }
+            
+            console.log('Updating price chart with', priceHistory.length, 'data points');
+            
+            const container = document.getElementById('priceChart');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const margin = { top: 20, right: 20, bottom: 30, left: 60 };
+            
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            
+            // Clear previous chart
+            priceChart.selectAll('*').remove();
+            
+            const svg = priceChart
+                .append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+            
+            // Ensure we have valid data
+            const validData = priceHistory.filter(d => 
+                d && typeof d.timestamp === 'number' && typeof d.mid_price === 'number'
+            );
+            
+            if (validData.length === 0) {
+                console.log('No valid price data found');
+                return;
+            }
+            
+            console.log('Valid data:', validData);
+            
+            // Scales with padding
+            const xExtent = d3.extent(validData, d => d.timestamp);
+            const yExtent = d3.extent(validData, d => d.mid_price);
+            
+            const xScale = d3.scaleLinear()
+                .domain(xExtent)
+                .range([0, chartWidth]);
+            
+            const yScale = d3.scaleLinear()
+                .domain(yExtent)
+                .range([chartHeight, 0])
+                .nice();
+            
+            // Line generator
+            const line = d3.line()
+                .x(d => xScale(d.timestamp))
+                .y(d => yScale(d.mid_price))
+                .curve(d3.curveMonotoneX);
+            
+            // Draw price line
+            svg.append('path')
+                .datum(validData)
+                .attr('fill', 'none')
+                .attr('stroke', '#007bff')
+                .attr('stroke-width', 2)
+                .attr('d', line);
+            
+            // Add grid lines
+            svg.append('g')
+                .attr('class', 'grid')
+                .attr('transform', `translate(0,${chartHeight})`)
+                .call(d3.axisBottom(xScale).tickSize(-chartHeight).tickFormat(''));
+            
+            svg.append('g')
+                .attr('class', 'grid')
+                .call(d3.axisLeft(yScale).tickSize(-chartWidth).tickFormat(''));
+            
+            // Axes
+            const xAxis = d3.axisBottom(xScale);
+            const yAxis = d3.axisLeft(yScale);
+            
+            svg.append('g')
+                .attr('transform', `translate(0,${chartHeight})`)
+                .call(xAxis);
+            
+            svg.append('g')
+                .call(yAxis);
+            
+            // Add labels
+            svg.append('text')
+                .attr('x', chartWidth / 2)
+                .attr('y', chartHeight + margin.bottom - 5)
+                .style('text-anchor', 'middle')
+                .text('Time (seconds)');
+            
+            svg.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', -margin.left + 15)
+                .attr('x', -chartHeight / 2)
+                .style('text-anchor', 'middle')
+                .text('Price ($)');
+        }
+        
+        function updateChart() {
+            // Generate some test data
+            const now = Date.now() / 1000;
+            for (let i = 0; i < 20; i++) {
+                testData.push({
+                    timestamp: now - (20 - i) * 10,
+                    mid_price: 100 + Math.random() * 2 - 1
+                });
+            }
+            
+            updatePriceChart(testData);
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeChart();
+            updateChart();
+        });
+    </script>
+</body>
+</html> 
