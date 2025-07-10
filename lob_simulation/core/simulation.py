@@ -14,11 +14,11 @@ import numpy as np
 import pandas as pd
 from numba import jit
 
-from .orderbook import OrderBook
-from .agents import InformedTrader, UninformedTrader, MarketMaker
-from .events import OrderEvent, CancelEvent, TradeEvent, Event
-from .metrics import MarketMetrics, LiquidityMetrics, ImpactMetrics
-from .strategies import StrategyConfig, create_strategy, BaseStrategy
+from ..orderbook import OrderBook
+from ..agents import InformedTrader, UninformedTrader, MarketMaker
+from ..events import OrderEvent, CancelEvent, TradeEvent, Event
+from ..metrics import MarketMetrics, LiquidityMetrics, ImpactMetrics
+from ..strategies import StrategyConfig, create_strategy, BaseStrategy
 
 
 @dataclass
@@ -83,6 +83,7 @@ class LimitOrderBookSimulation:
         # Event queue (priority queue for time-based events)
         self.event_queue = []
         self.current_time = 0.0
+        self._event_counter = 0  # Unique counter for event queue tie-breaker
         
         # Data collection
         self.trades = []
@@ -164,7 +165,7 @@ class LimitOrderBookSimulation:
         # Main simulation loop
         while self.current_time < duration and self.event_queue:
             # Get next event
-            event_time, event = heapq.heappop(self.event_queue)
+            event_time, _, event = heapq.heappop(self.event_queue)
             self.current_time = event_time
             
             # Process event
@@ -185,18 +186,29 @@ class LimitOrderBookSimulation:
     
     def _schedule_initial_events(self):
         """Schedule initial events from all agents."""
-        import time
         for agent_type, agent_list in self.agents.items():
             for agent in agent_list:
-                next_event = agent.get_next_event(self.current_time)
-                if next_event:
-                    heapq.heappush(self.event_queue, (next_event.timestamp, time.time(), next_event))
+                # Schedule multiple initial events to populate the order book
+                for i in range(3):  # Schedule 3 events per agent initially
+                    next_event = agent.get_next_event(self.current_time)
+                    if next_event:
+                        # Ensure some events happen immediately
+                        if i == 0:
+                            next_event.timestamp = self.current_time + 0.001 * i
+                        self._event_counter += 1
+                        heapq.heappush(self.event_queue, (next_event.timestamp, self._event_counter, next_event))
     
     def _schedule_agent_events(self):
         """Schedule next events from agents that just acted."""
-        # This is a simplified version - in practice, you'd track which agents
-        # need to schedule new events based on their current state
-        pass
+        # Schedule new events from all agents periodically
+        for agent_type, agent_list in self.agents.items():
+            for agent in agent_list:
+                # Only schedule if we don't have too many events already
+                if len(self.event_queue) < 1000:
+                    next_event = agent.get_next_event(self.current_time)
+                    if next_event:
+                        self._event_counter += 1
+                        heapq.heappush(self.event_queue, (next_event.timestamp, self._event_counter, next_event))
     
     def _process_event(self, event: Event):
         """Process a single event."""
@@ -232,6 +244,10 @@ class LimitOrderBookSimulation:
         """Process a trade event."""
         self.trades.append(event)
         self._update_price_impact(event)
+        
+        # Notify strategies about the trade
+        for strategy in self.strategies.values():
+            strategy.process_trade(event)
     
     def _update_price_impact(self, trade: TradeEvent):
         """Update price impact based on trade."""
@@ -305,9 +321,9 @@ class LimitOrderBookSimulation:
             # Generate strategy orders periodically (every 5 seconds)
             if self.current_time % 5.0 < 0.1:  # Every ~5 seconds
                 strategy_orders = strategy.generate_orders(self.current_time + 0.1, market_data)
-                for i, order in enumerate(strategy_orders):
-                    # Add a unique counter to break ties
-                    heapq.heappush(self.event_queue, (order.timestamp, time.time() + i * 0.0001, order))
+                for order in strategy_orders:
+                    self._event_counter += 1
+                    heapq.heappush(self.event_queue, (order.timestamp, self._event_counter, order))
     
     def _calculate_final_metrics(self):
         """Calculate final market metrics."""
@@ -360,7 +376,8 @@ class LimitOrderBookSimulation:
     
     def add_custom_event(self, event: Event):
         """Add a custom event to the simulation."""
-        heapq.heappush(self.event_queue, (event.timestamp, time.time(), event))
+        self._event_counter += 1
+        heapq.heappush(self.event_queue, (event.timestamp, self._event_counter, event))
     
     def reset(self):
         """Reset the simulation to initial state."""
@@ -374,4 +391,48 @@ class LimitOrderBookSimulation:
         self.volume_history = []
         self.mid_price = self.config.initial_price
         self.best_bid = self.mid_price - self.config.tick_size
-        self.best_ask = self.mid_price + self.config.tick_size 
+        self.best_ask = self.mid_price + self.config.tick_size
+    
+    def run_step(self, max_events: int = 10):
+        """Run a single step of the simulation, processing up to max_events."""
+        if not self.event_queue:
+            # If no events, schedule some new ones
+            self._schedule_agent_events()
+            return
+        
+        events_processed = 0
+        while self.event_queue and events_processed < max_events:
+            # Get next event
+            event_time, _, event = heapq.heappop(self.event_queue)
+            self.current_time = event_time
+            
+            # Process event
+            self._process_event(event)
+            
+            # Record market state
+            self._record_market_state()
+            
+            events_processed += 1
+        
+        # Schedule new events after processing
+        self._schedule_agent_events()
+    
+    def stop(self):
+        """Stop the simulation."""
+        # Clear the event queue to stop processing
+        self.event_queue = []
+    
+    @property
+    def order_book(self):
+        """Get the order book object."""
+        return self.orderbook
+    
+    @property
+    def price_times(self):
+        """Get the timestamps of price history."""
+        return [entry['timestamp'] for entry in self.price_history]
+    
+    @property
+    def trade_history(self):
+        """Get the trade history."""
+        return self.trades 

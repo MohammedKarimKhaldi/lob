@@ -21,6 +21,9 @@
     
     <div class="controls">
         <div class="control-group">
+            <label><strong>Select Trading Strategies (multiple allowed):</strong></label>
+        </div>
+        <div class="control-group">
             <label>Market Making Strategy:</label>
             <input type="checkbox" class="strategy-select" value="market_making" checked>
         </div>
@@ -38,6 +41,18 @@
         <div class="control-group">
             <label>Arbitrage Strategy:</label>
             <input type="checkbox" class="strategy-select" value="arbitrage">
+        </div>
+    </div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label for="refreshRate">Refresh Rate (seconds):</label>
+            <select id="refreshRate" class="form-control">
+                <option value="0.5">0.5s (Fast)</option>
+                <option value="1.0" selected>1.0s (Normal)</option>
+                <option value="2.0">2.0s (Slow)</option>
+                <option value="5.0">5.0s (Very Slow)</option>
+            </select>
         </div>
     </div>
     

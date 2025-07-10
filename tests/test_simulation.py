@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 
-from lob_simulation.simulation import LimitOrderBookSimulation, SimulationConfig
+from lob_simulation.core.simulation import LimitOrderBookSimulation, SimulationConfig
 from lob_simulation.orderbook import OrderBook
 from lob_simulation.events import OrderEvent, CancelEvent, TradeEvent
 from lob_simulation.agents import InformedTrader, UninformedTrader, MarketMaker

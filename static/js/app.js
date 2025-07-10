@@ -53,26 +53,43 @@ const Utils = {
 
 // WebSocket management
 const WebSocketManager = {
+    refreshRate: 1.0,
+    updateInterval: null,
+    
     connect: () => {
-        AppState.socket = io();
+        // Connect to the same port as the current page
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        AppState.socket = io(`${protocol}//${host}`);
+        console.log('Connecting to WebSocket at:', `${protocol}//${host}`);
         
         AppState.socket.on('connect', () => {
             AppState.isConnected = true;
             Utils.showNotification('Connected to server', 'success');
             UI.updateConnectionStatus(true);
+            
+            // Start requesting updates at the current refresh rate
+            WebSocketManager.startUpdateRequests();
+            
+            // Request initial update immediately
+            setTimeout(() => {
+                WebSocketManager.requestUpdate();
+            }, 100);
         });
         
         AppState.socket.on('disconnect', () => {
             AppState.isConnected = false;
             Utils.showNotification('Disconnected from server', 'error');
             UI.updateConnectionStatus(false);
+            WebSocketManager.stopUpdateRequests();
         });
         
         AppState.socket.on('market_update', (data) => {
+            console.log('Received market update:', data);
             DataManager.updateMarketData(data);
             UI.updateCharts();
             UI.updateOrderBook(data.order_book);
-            UI.updateStrategyPerformance(data.strategy_performance);
+            UI.updateStrategyPerformance(data.strategy_performance || {});
         });
         
         AppState.socket.on('connected', (data) => {
@@ -85,11 +102,41 @@ const WebSocketManager = {
             AppState.socket.disconnect();
             AppState.socket = null;
         }
+        WebSocketManager.stopUpdateRequests();
     },
     
     requestUpdate: () => {
         if (AppState.socket && AppState.isConnected) {
+            console.log(`Requesting update (refresh rate: ${WebSocketManager.refreshRate}s)`);
             AppState.socket.emit('request_update');
+        }
+    },
+    
+    startUpdateRequests: () => {
+        WebSocketManager.stopUpdateRequests(); // Clear any existing interval
+        
+        WebSocketManager.updateInterval = setInterval(() => {
+            if (AppState.isConnected && AppState.socket) {
+                WebSocketManager.requestUpdate();
+            }
+        }, WebSocketManager.refreshRate * 1000);
+        
+        console.log(`Started update requests every ${WebSocketManager.refreshRate} seconds`);
+    },
+    
+    stopUpdateRequests: () => {
+        if (WebSocketManager.updateInterval) {
+            clearInterval(WebSocketManager.updateInterval);
+            WebSocketManager.updateInterval = null;
+            console.log('Stopped update requests');
+        }
+    },
+    
+    updateRefreshRate: (newRate) => {
+        console.log(`WebSocket refresh rate changed from ${WebSocketManager.refreshRate}s to ${newRate}s`);
+        WebSocketManager.refreshRate = newRate;
+        if (AppState.isConnected) {
+            WebSocketManager.startUpdateRequests();
         }
     }
 };
@@ -104,6 +151,20 @@ const DataManager = {
     },
     
     updateMarketData: (data) => {
+        // Map backend snake_case to frontend camelCase
+        if (data.price_history) {
+            DataManager.marketData.priceHistory = data.price_history;
+        }
+        if (data.order_book) {
+            DataManager.marketData.orderBook = data.order_book;
+        }
+        if (data.strategy_performance) {
+            DataManager.marketData.strategyPerformance = data.strategy_performance;
+        }
+        if (data.trade_history) {
+            DataManager.marketData.tradeHistory = data.trade_history;
+        }
+        // Merge any other fields as fallback
         DataManager.marketData = { ...DataManager.marketData, ...data };
     },
     
@@ -127,14 +188,14 @@ const DataManager = {
 
 // API management
 const APIManager = {
-    async startSimulation(strategies = {}) {
+    async startSimulation(strategies = {}, refreshRate = 1.0) {
         try {
             const response = await fetch('/api/start_simulation', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ strategies })
+                body: JSON.stringify({ strategies, refresh_rate: refreshRate })
             });
             
             const data = await response.json();
@@ -320,9 +381,13 @@ const ChartManager = {
     
     updatePriceChart: () => {
         const chart = AppState.charts.price;
-        if (!chart) return;
+        if (!chart) {
+            console.log('Price chart not found');
+            return;
+        }
         
         const priceData = DataManager.getPriceHistory();
+        console.log('Updating price chart with:', priceData);
         
         chart.data.labels = priceData.times.map(t => Utils.formatNumber(t, 1));
         chart.data.datasets[0].data = priceData.prices;
@@ -332,9 +397,14 @@ const ChartManager = {
     
     updateOrderBookChart: () => {
         const chart = AppState.charts.orderBook;
-        if (!chart) return;
+        if (!chart) {
+            console.log('Order book chart not found');
+            return;
+        }
         
         const orderBook = DataManager.getOrderBook();
+        console.log('Updating order book chart with:', orderBook);
+        
         const bids = orderBook.bids || [];
         const asks = orderBook.asks || [];
         
@@ -360,6 +430,12 @@ const ChartManager = {
         chart.data.datasets[1].data = askData;
         
         chart.update('none');
+    },
+    
+    updateRefreshRate: (newRate) => {
+        console.log(`Chart refresh rate updated to ${newRate} seconds`);
+        // Charts are updated when data is received, so no interval needed
+        // The refresh rate is controlled by the WebSocket manager
     }
 };
 
@@ -379,7 +455,8 @@ const UI = {
                 try {
                     startBtn.disabled = true;
                     const strategies = UI.getStrategyConfig();
-                    await APIManager.startSimulation(strategies);
+                    const refreshRate = UI.getRefreshRate();
+                    await APIManager.startSimulation(strategies, refreshRate);
                 } catch (error) {
                     console.error('Failed to start simulation:', error);
                 } finally {
@@ -410,6 +487,8 @@ const UI = {
                 UI.updateStrategyConfig();
             });
         });
+        
+
     },
     
     getStrategyConfig: () => {
@@ -427,6 +506,31 @@ const UI = {
         });
         
         return strategies;
+    },
+    
+    getRefreshRate: () => {
+        const refreshRateSelect = document.getElementById('refreshRate');
+        return refreshRateSelect ? parseFloat(refreshRateSelect.value) : 1.0;
+    },
+    
+    initRefreshRateControl: () => {
+        const refreshRateSelect = document.getElementById('refreshRate');
+        if (refreshRateSelect) {
+            refreshRateSelect.addEventListener('change', () => {
+                const newRate = UI.getRefreshRate();
+                console.log('Refresh rate changed to:', newRate, 'seconds');
+                
+                // Update WebSocket manager refresh rate
+                if (WebSocketManager.updateRefreshRate) {
+                    WebSocketManager.updateRefreshRate(newRate);
+                }
+                
+                // Update chart refresh rates
+                if (ChartManager.updateRefreshRate) {
+                    ChartManager.updateRefreshRate(newRate);
+                }
+            });
+        }
     },
     
     updateStrategyConfig: () => {
@@ -469,6 +573,7 @@ const UI = {
     },
     
     updateCharts: () => {
+        console.log('UI.updateCharts called');
         ChartManager.updatePriceChart();
         ChartManager.updateOrderBookChart();
     },
@@ -482,33 +587,30 @@ const UI = {
         
         let html = `
             <tr>
-                <th>Price</th>
-                <th>Quantity</th>
-                <th>Side</th>
+                <th>Bid Price</th>
+                <th>Bid Qty</th>
+                <th>Ask Price</th>
+                <th>Ask Qty</th>
             </tr>
         `;
         
-        // Add asks (descending)
-        asks.slice().reverse().forEach(ask => {
-            html += `
-                <tr>
-                    <td class="ask">${Utils.formatNumber(ask.price, 2)}</td>
-                    <td>${ask.quantity}</td>
-                    <td class="ask">Ask</td>
-                </tr>
-            `;
-        });
+        // Get the maximum number of levels to display
+        const maxLevels = Math.max(bids.length, asks.length);
+        const levelsToShow = Math.min(maxLevels, 10);
         
-        // Add bids (descending)
-        bids.forEach(bid => {
+        for (let i = 0; i < levelsToShow; i++) {
+            const bid = i < bids.length ? bids[i] : null;
+            const ask = i < asks.length ? asks[i] : null;
+            
             html += `
                 <tr>
-                    <td class="bid">${Utils.formatNumber(bid.price, 2)}</td>
-                    <td>${bid.quantity}</td>
-                    <td class="bid">Bid</td>
+                    <td class="bid">${bid ? Utils.formatNumber(bid.price, 2) : '-'}</td>
+                    <td>${bid ? bid.quantity : '-'}</td>
+                    <td class="ask">${ask ? Utils.formatNumber(ask.price, 2) : '-'}</td>
+                    <td>${ask ? ask.quantity : '-'}</td>
                 </tr>
             `;
-        });
+        }
         
         table.innerHTML = html;
     },
@@ -519,31 +621,42 @@ const UI = {
         
         let html = '';
         
-        Object.entries(performance).forEach(([strategyName, data]) => {
-            const pnlClass = data.pnl >= 0 ? 'positive' : 'negative';
-            
-            html += `
-                <div class="strategy-card">
-                    <h4>${strategyName.replace('_', ' ').toUpperCase()}</h4>
-                    <div class="strategy-metric">
-                        <span class="label">PnL:</span>
-                        <span class="value ${pnlClass}">${Utils.formatCurrency(data.pnl)}</span>
+        // Limit to first 4 strategies to prevent excessive content
+        const limitedPerformance = Object.entries(performance).slice(0, 4);
+        
+        if (limitedPerformance.length === 0) {
+            html = '<div class="strategy-card"><h4>No Strategies Active</h4><p>Start a simulation with strategies to see performance data.</p></div>';
+        } else {
+            limitedPerformance.forEach(([strategyName, data]) => {
+                const pnlClass = data.total_pnl >= 0 ? 'positive' : 'negative';
+                
+                html += `
+                    <div class="strategy-card">
+                        <h4>${strategyName.replace('_', ' ').toUpperCase()}</h4>
+                        <div class="strategy-metric">
+                            <span class="label">PnL:</span>
+                            <span class="value ${pnlClass}">${Utils.formatCurrency(data.total_pnl)}</span>
+                        </div>
+                        <div class="strategy-metric">
+                            <span class="label">Position:</span>
+                            <span class="value">${data.current_position}</span>
+                        </div>
+                        <div class="strategy-metric">
+                            <span class="label">Trades:</span>
+                            <span class="value">${data.num_trades}</span>
+                        </div>
+                        <div class="strategy-metric">
+                            <span class="label">Win Rate:</span>
+                            <span class="value">${Utils.formatNumber(data.win_rate * 100, 1)}%</span>
+                        </div>
+                        <div class="strategy-metric">
+                            <span class="label">Sharpe Ratio:</span>
+                            <span class="value">${Utils.formatNumber(data.sharpe_ratio, 3)}</span>
+                        </div>
                     </div>
-                    <div class="strategy-metric">
-                        <span class="label">Position:</span>
-                        <span class="value">${data.position}</span>
-                    </div>
-                    <div class="strategy-metric">
-                        <span class="label">Sharpe Ratio:</span>
-                        <span class="value">${Utils.formatNumber(data.sharpe_ratio, 3)}</span>
-                    </div>
-                    <div class="strategy-metric">
-                        <span class="label">Max Drawdown:</span>
-                        <span class="value">${Utils.formatNumber(data.max_drawdown, 2)}%</span>
-                    </div>
-                </div>
-            `;
-        });
+                `;
+            });
+        }
         
         container.innerHTML = html;
     }
@@ -566,6 +679,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(() => {
         APIManager.getSimulationStatus();
     }, 5000);
+    
+    // Initialize refresh rate control
+    UI.initRefreshRateControl();
     
     console.log('LOB Simulation Web Interface initialized');
 }); 

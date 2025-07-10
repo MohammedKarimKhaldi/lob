@@ -10,7 +10,7 @@ __version__ = "1.0.0"
 __author__ = "Limit Order Book Simulation Team"
 __email__ = "contact@lob-simulation.com"
 
-from .simulation import LimitOrderBookSimulation, SimulationConfig
+from .core.simulation import LimitOrderBookSimulation, SimulationConfig
 from .orderbook import OrderBook
 from .agents import InformedTrader, UninformedTrader, MarketMaker
 from .events import OrderEvent, CancelEvent, TradeEvent
