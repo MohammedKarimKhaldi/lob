@@ -1,116 +1,211 @@
-# Project Architecture & Logic
+# Codebase Documentation: Modular LOB Simulation
 
-## Overview
-
-This project is a modular, extensible Python framework for simulating market microstructure and limit order book (LOB) dynamics. It supports both a web interface and a CLI, and is designed for research, experimentation, and extension.
+This document provides a comprehensive overview of the codebase, describing the purpose, structure, and extensibility of each major module and submodule. It is intended for developers and contributors.
 
 ---
 
-## Directory Structure
+## 1. `lob_simulation/agents/`
 
-```
-lob/
-├── app.py                # Main web entry point
-├── main.py               # Main CLI entry point
-├── requirements.txt      # Python dependencies
-├── setup.py              # Packaging and install
-├── config/
-│   └── settings.py       # Centralized configuration
-├── lob_simulation/
-│   ├── agents/           # Agent plugins (e.g., InformedTrader, MarketMaker)
-│   ├── strategies/       # Strategy plugins (e.g., market making, momentum)
-│   ├── metrics/          # Metrics plugins (market, liquidity, impact)
-│   ├── events/           # Event types (OrderEvent, TradeEvent, etc.)
-│   ├── orderbook/        # Modular order book (Order, OrderBook, matching, state)
-│   ├── core/             # Simulation engine and interfaces
-│   ├── cli/              # CLI entry point and logic
-│   ├── web/              # Web app (Flask + SocketIO)
-│   ├── utils/            # Utilities (logging, etc.)
-│   └── ...
-├── static/               # Web static assets
-├── templates/            # Web HTML templates
-├── tests/                # Unit and integration tests
-└── examples/             # Example scripts
-```
+**Purpose:** Implements market agents (participants) and the agent plugin/registry system.
+
+- **`base.py`**: Defines the abstract base class for all agents.
+  ```python
+  class BaseAgent(ABC):
+      def get_next_event(self, current_time: float) -> Optional[Event]: ...
+      def process_market_data(self, market_data: Dict[str, Any]): ...
+  ```
+- **Types:**
+  - `InformedTrader`, `UninformedTrader`, `MarketMaker` (each in its own file)
+- **Registry:**
+  - `__init__.py` provides a registry for agent types:
+    ```python
+    agent_registry.register('market_maker', MarketMaker)
+    agent_registry.create('market_maker', ...)
+    ```
+- **Extending:**
+  - Add a new agent by subclassing `BaseAgent` and registering it in the registry.
 
 ---
 
-## Plugin/Registry System
+## 2. `lob_simulation/strategies/`
 
-- **Agents, Strategies, Metrics**: Each is a plugin, registered via a central registry in their respective submodules (`__init__.py`).
-- **Adding New Plugins**: Create a new file for your agent/strategy/metric, subclass the appropriate base class, and register it in the registry.
-- **Benefits**: No need to modify core code to add new types. Promotes extensibility and clean separation.
+**Purpose:** Implements trading strategies and the strategy plugin/registry system.
 
----
-
-## Event-Driven Simulation Flow
-
-- **Initialization**: Loads config, sets up agents, strategies, order book, and event queue.
-- **Event Loop**: Processes events (orders, trades, cancels) in time order. Agents and strategies generate new events based on market state.
-- **Market Data**: Order book state, price history, and trades are tracked and updated at each step.
-- **Metrics**: Market, liquidity, and impact metrics are calculated and available for analysis.
-
----
-
-## Order Book Modularization
-
-- **orderbook/order.py**: Order dataclass
-- **orderbook/book.py**: Main OrderBook class
-- **orderbook/matching.py**: Matching engine logic
-- **orderbook/state.py**: State, serialization, and snapshot logic
-- **orderbook/utils.py**: Utilities (if needed)
+- **`base.py`**: Abstract base class for all strategies, plus config and performance dataclasses.
+  ```python
+  class BaseStrategy(ABC):
+      def generate_orders(self, current_time: float, market_data: Dict[str, Any]) -> List[OrderEvent]: ...
+      def update_market_data(self, market_data: Dict[str, Any]): ...
+      def process_trade(self, trade: TradeEvent): ...
+  ```
+- **Types:**
+  - `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `ArbitrageStrategy`
+- **Registry:**
+  - `__init__.py` provides a registry for strategy types:
+    ```python
+    strategy_registry.register('momentum', MomentumStrategy)
+    strategy_registry.create('momentum', config)
+    ```
+- **Extending:**
+  - Add a new strategy by subclassing `BaseStrategy` and registering it in the registry.
 
 ---
 
-## Adding New Components
+## 3. `lob_simulation/metrics/`
 
-- **Agent**: Add a new file in `lob_simulation/agents/`, subclass `BaseAgent`, register in `__init__.py`.
-- **Strategy**: Add a new file in `lob_simulation/strategies/`, subclass `BaseStrategy`, register in `__init__.py`.
-- **Metric**: Add a new file in `lob_simulation/metrics/`, subclass `BaseMetrics`, register in `__init__.py`.
-- **Event**: Add a new file in `lob_simulation/events/`, subclass `Event`, register in `__init__.py`.
+**Purpose:** Implements market metrics and the metrics plugin/registry system.
 
----
-
-## Configuration & Environment
-
-- All configuration is managed in `config/settings.py`.
-- Can be overridden via environment variables (see `settings.py` for details).
-- Use the CLI `config` command to view, save, or load configs.
-
----
-
-## Testing & Examples
-
-- **Unit tests**: `tests/unit/`
-- **Integration tests**: `tests/integration/`
-- **Simulation tests**: `tests/test_simulation.py`
-- **Examples**: `examples/` contains scripts for basic simulation, market impact analysis, strategy comparison, etc.
+- **`base.py`**: Abstract base class for all metrics calculators.
+  ```python
+  class BaseMetrics(ABC):
+      def calculate(self, *args, **kwargs) -> None: ...
+      def get_summary(self) -> Dict[str, Any]: ...
+  ```
+- **Types:**
+  - `MarketMetrics`, `LiquidityMetrics`, `ImpactMetrics`
+- **Registry:**
+  - `__init__.py` provides a registry for metrics types:
+    ```python
+    metrics_registry.register('market', MarketMetrics)
+    metrics_registry.create('market')
+    ```
+- **Extending:**
+  - Add a new metrics class by subclassing `BaseMetrics` and registering it in the registry.
 
 ---
 
-## Web & CLI Integration
+## 4. `lob_simulation/events/`
 
-- **Web**: Flask + SocketIO app in `lob_simulation/web/app.py`. Start with `python app.py`.
-- **CLI**: Modular CLI in `lob_simulation/cli/main.py`. Start with `python main.py` or `python -m lob_simulation.cli.main`.
-- Both interfaces use the same simulation engine and plugin system.
+**Purpose:** Defines all event types and the event queue for the simulation.
+
+- **`base.py`**: Abstract base class for all events.
+  ```python
+  class Event(ABC):
+      def process(self) -> Any: ...
+  class EventType(Enum): ...
+  ```
+- **Types:**
+  - `OrderEvent`, `CancelEvent`, `TradeEvent`, `MarketDataEvent` (each in its own file)
+- **Event Queue:**
+  - `queue.py` implements a priority queue for events.
+- **Extending:**
+  - Add a new event by subclassing `Event` and registering it in `__init__.py`.
 
 ---
 
-## Best Practices
+## 5. `lob_simulation/orderbook/`
 
-- Keep each agent, strategy, metric, and event in its own file for clarity.
-- Register all plugins in the appropriate `__init__.py` registry.
-- Use the provided base classes and interfaces for consistency.
+**Purpose:** Implements the modular order book and matching engine.
+
+- **`order.py`**: Defines the `Order` dataclass.
+- **`book.py`**: Main `OrderBook` class.
+  ```python
+  class OrderBook:
+      def add_order(self, order_event: OrderEvent, current_time: float = 0.0) -> List[TradeEvent]: ...
+      def cancel_order(self, order_id: str) -> bool: ...
+      def get_state(self) -> Dict[str, Any]: ...
+  ```
+- **`matching.py`**: Matching engine logic (order matching, price-time priority).
+- **`state.py`**: State, serialization, and snapshot logic.
+- **`utils.py`**: Utilities (if needed).
+- **Extending:**
+  - Add new order types, matching logic, or state serialization as needed.
+
+---
+
+## 6. `lob_simulation/core/`
+
+**Purpose:** Simulation engine and abstract interfaces for extensibility.
+
+- **`simulation.py`**: Main simulation engine.
+  ```python
+  class LimitOrderBookSimulation:
+      def run(self, duration: Optional[float] = None) -> Dict[str, Any]: ...
+      def add_strategy(self, strategy_name: str, config: StrategyConfig): ...
+      def get_results(self) -> Dict[str, Any]: ...
+  ```
+- **`interfaces.py`**: Abstract interfaces for agents, strategies, metrics, simulation engine, etc.
+  ```python
+  class Strategy(ABC): ...
+  class Agent(ABC): ...
+  class MetricsCalculator(ABC): ...
+  class SimulationEngine(ABC): ...
+  ```
+- **Extending:**
+  - Implement new interfaces or extend the simulation engine for custom workflows.
+
+---
+
+## 7. `lob_simulation/cli/`
+
+**Purpose:** Command-line interface for running simulations, testing strategies, and managing config.
+
+- **`main.py`**: CLI entry point.
+  - Commands: `web`, `run`, `test`, `config`
+  - Example usage:
+    ```bash
+    python main.py run --duration 3600 --strategies market_making momentum
+    python main.py config --show
+    ```
+- **Extending:**
+  - Add new CLI commands or options in `main.py`.
+
+---
+
+## 8. `lob_simulation/web/`
+
+**Purpose:** Web application (Flask + SocketIO) for interactive simulation and visualization.
+
+- **`app.py`**: Web app entry point and main logic.
+  - Endpoints:
+    - `/` (main page)
+    - `/api/start_simulation`, `/api/stop_simulation`, `/api/simulation_status`, `/api/order_book`, `/api/price_history`, `/api/trade_history`, `/api/strategy_performance`
+  - WebSocket events for real-time updates.
+- **Extending:**
+  - Add new API endpoints or frontend features as needed.
+
+---
+
+## 9. `lob_simulation/utils/`
+
+**Purpose:** Utilities for logging and shared functionality.
+
+- **`logger.py`**: Centralized logging utilities.
+  ```python
+  class SimulationLogger:
+      def info(self, message: str) -> None: ...
+      def error(self, message: str) -> None: ...
+  class LoggerMixin: ...
+  def get_logger(name: str = "lob_simulation") -> SimulationLogger: ...
+  ```
+- **Extending:**
+  - Add new utilities as needed for the codebase.
+
+---
+
+## How Modules Fit Together
+
+- The **simulation engine** (`core/simulation.py`) orchestrates agents, strategies, the order book, and events.
+- **Agents** and **strategies** are pluggable and interact via registries.
+- **Events** drive the simulation, processed in time order.
+- **Metrics** are calculated throughout the simulation for analysis.
+- The **CLI** and **web app** provide user interfaces for running and visualizing simulations.
+
+---
+
+## Extending the Codebase
+
+- Subclass the appropriate base class (agent, strategy, metric, event) and register in the registry.
+- Add new CLI commands or web endpoints as needed.
 - Write tests for new components in `tests/`.
-- Document your code with clear docstrings and comments.
 
 ---
 
-## Further Documentation
+## Further Reading
 
 - See code docstrings and comments for detailed API documentation.
 - Example scripts are in `examples/`.
-- For advanced usage, see the modular submodules and their registries.
+- For configuration, see `config/settings.py`.
 
 ---
 
